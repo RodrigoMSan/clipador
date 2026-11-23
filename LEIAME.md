@@ -4,7 +4,7 @@ Busca os clipes mais vistos do streamer na Twitch, junta 3 a 6 clipes num vídeo
 
 ## Rodar na nuvem (GitHub Actions, sem PC ligado)
 
-O arquivo `.github/workflows/clipador.yml` liga o bot nos servidores do GitHub em turnos de 6 horas, o dia todo. A cada turno ele restaura o que já foi feito (ramo `estado` do repositório), atende os botões do Telegram e monta os vídeos nos horários marcados. Os vídeos em 1080p ficam nas Releases do repositório, com link para baixar e postar.
+O arquivo `.github/workflows/clipador.yml` liga o bot nos servidores do GitHub uma vez por hora, por poucos minutos. A cada execução ele restaura o que já foi feito (ramo `estado` do repositório), atende os botões do Telegram apertados desde a última vez, monta os vídeos às 18h, posta no YouTube às 12h e 18h, salva e desliga. Os botões podem levar até 1 hora para responder. Os vídeos em 1080p ficam nas Releases do repositório, com link para baixar e postar.
 
 Configuração (uma vez):
 

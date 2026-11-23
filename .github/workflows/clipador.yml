@@ -1,10 +1,10 @@
-# Mantém o bot do Clipador ligado nos servidores do GitHub, em turnos de ~6 horas.
-# Cada turno restaura o estado, atende os botões do Telegram e gera os vídeos nos horários marcados.
+# Roda o Clipador no GitHub em execuções curtas, uma por hora: restaura o estado, atende os botões
+# do Telegram, gera os vídeos às 18h, posta no YouTube às 12h e 18h, salva e desliga.
 name: Clipador
 
 on:
   schedule:
-    - cron: "0 0,6,12,18 * * *"   # um turno a cada 6 h (horário UTC)
+    - cron: "17 * * * *"          # uma execução curta por hora (atende o Telegram, gera e posta nos horários)
   workflow_dispatch:               # botão "Run workflow" para ligar na hora
     inputs:
       gerar_todos:
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 358
+    timeout-minutes: 75
     env:
       TZ: America/Sao_Paulo
       PYTHONIOENCODING: utf-8
@@ -34,7 +34,8 @@ jobs:
       CLIPADOR_POSTAR_DESDE: ${{ vars.CLIPADOR_POSTAR_DESDE || '2026-11-25' }}
       CLIPADOR_POR_HORARIO: ${{ vars.CLIPADOR_POR_HORARIO || '2' }}
       CLIPADOR_GERAR_TODOS: ${{ inputs.gerar_todos || 'false' }}
-      CLIPADOR_MAX_MINUTOS: "340"
+      CLIPADOR_MAX_MINUTOS: "3"
+      CLIPADOR_MAX_LOTE_MIN: "45"
       GH_TOKEN: ${{ github.token }}
       METRICOOL_TOKEN: ${{ secrets.METRICOOL_TOKEN }}
       METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}

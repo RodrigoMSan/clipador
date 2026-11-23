@@ -39,6 +39,35 @@ MOTIVOS = {
 }
 _ocupado = threading.Lock()
 _fim_do_turno = None  # hora (time.time) em que o turno na nuvem acaba
+_inicio = time.time()
+MAX_LOTE_MIN = float(os.getenv("CLIPADOR_MAX_LOTE_MIN", "45"))  # por execução; o resto fica para a próxima
+_ativos = 0
+_ativos_trava = threading.Lock()
+
+
+class _trabalho:
+    """Marca que há trabalho em andamento: a execução curta na nuvem só termina quando zerar."""
+    def __enter__(self):
+        global _ativos
+        with _ativos_trava:
+            _ativos += 1
+
+    def __exit__(self, *a):
+        global _ativos
+        with _ativos_trava:
+            _ativos -= 1
+
+
+def em_fundo(funcao, *args):
+    marca = _trabalho()
+    marca.__enter__()  # conta antes de a thread começar, para a execução não terminar no meio
+
+    def rodar():
+        try:
+            funcao(*args)
+        finally:
+            marca.__exit__()
+    threading.Thread(target=rodar, daemon=True).start()
 
 
 def _auto_ligado():
@@ -227,7 +256,8 @@ def postador():
                     avisar("📭 Hora de postar, mas não há vídeo aprovado na fila. Aprove alguns no Telegram.")
                 else:
                     print(f"[{chave}] postando vídeo {vid} no YouTube")
-                    publicar_youtube(vid, TELEGRAM_CHAT_ID)
+                    with _trabalho():
+                        publicar_youtube(vid, TELEGRAM_CHAT_ID)
         except Exception:
             print(_ocultar(traceback.format_exc()))
         time.sleep(30)
@@ -328,8 +358,8 @@ def gerar_varios(streamer, chat, quantidade=None):
     nuvem.salvar_estado("lote iniciado")
     feitos, erros, primeiro = 0, 0, True
     while restante == "todos" or restante > 0:
-        if _fim_do_turno and time.time() > _fim_do_turno - 8 * 60:
-            print("Turno acabando: o próximo continua o lote.")
+        if NA_NUVEM and time.time() > _inicio + MAX_LOTE_MIN * 60:
+            print("Tempo desta execução esgotado: a próxima continua o lote.")
             return
         vid = gerar_e_enviar(streamer, chat, buscar=primeiro, esperar=True)
         primeiro = False
@@ -382,7 +412,7 @@ def decidir(cb):
         link = f"\n\nArquivo para postar: {v['url']}" if v.get("url") else ""
         chamar("editMessageCaption", chat_id=chat, message_id=msg_id,
                caption=(f"✅ APROVADO{link}\n\n{texto_video(banco.video(vid))}")[:1024])
-        threading.Thread(target=publicar, args=(vid, chat), daemon=True).start()
+        em_fundo(publicar, vid, chat)
         return "Aprovado"
 
     if acao == "rp":
@@ -450,20 +480,20 @@ def tratar_mensagem(m):
         if todos or (qtd and qtd > 1):
             avisar(f"Vou montar {'todos os vídeos que o estoque permite' if todos else f'{qtd} vídeos'} de {streamer}, "
                    "um atrás do outro. Cada um chega aqui para aprovar.", chat)
-            threading.Thread(target=gerar_varios, args=(streamer, chat, None if todos else qtd), daemon=True).start()
+            em_fundo(gerar_varios, streamer, chat, None if todos else qtd)
         else:
-            threading.Thread(target=gerar_e_enviar, args=(streamer, chat), daemon=True).start()
+            em_fundo(gerar_e_enviar, streamer, chat)
     elif texto.startswith("/publicar"):
         partes = texto.split()
         if len(partes) > 1 and partes[1].isdigit():
             vid = int(partes[1])
             if banco.video(vid) and (banco.video(vid).get("youtube") or "").startswith("metricool:"):
                 banco.atualizar_video(vid, youtube=None)  # tentar de novo
-            threading.Thread(target=publicar, args=(vid, chat, True), daemon=True).start()
+            em_fundo(publicar, vid, chat, True)
         else:
             avisar("Use assim: /publicar 3 (o número do vídeo).", chat)
     elif texto.startswith("/pendentes"):
-        threading.Thread(target=reenviar_pendentes, args=(chat,), daemon=True).start()
+        em_fundo(reenviar_pendentes, chat)
     elif texto.startswith("/status"):
         c = {s: len(banco.videos_por_status(s)) for s in ("aguardando", "aprovado", "reprovado")}
         avisar(texto_estoque(), chat)
@@ -531,9 +561,11 @@ def agendador():
                 if banco.meta("lote", ""):
                     print("Já há um lote em andamento; ele cobre este horário.")
                 elif POR_HORARIO > 1:
-                    gerar_varios(streamer, TELEGRAM_CHAT_ID, POR_HORARIO)
+                    with _trabalho():
+                        gerar_varios(streamer, TELEGRAM_CHAT_ID, POR_HORARIO)
                 else:
-                    gerar_e_enviar(streamer, TELEGRAM_CHAT_ID)
+                    with _trabalho():
+                        gerar_e_enviar(streamer, TELEGRAM_CHAT_ID)
         except Exception:
             print(_ocultar(traceback.format_exc()))
         time.sleep(20)
@@ -569,7 +601,7 @@ def rodar_bot():
     if TELEGRAM_CHAT_ID and os.getenv("CLIPADOR_GERAR_TODOS", "").lower() == "true" and not banco.meta("lote", ""):
         banco.definir_meta("lote", json.dumps({"streamer": STREAMERS[0], "restante": "todos"}))
     if TELEGRAM_CHAT_ID:
-        threading.Thread(target=continuar_lote, daemon=True).start()
+        em_fundo(continuar_lote)
     if TELEGRAM_CHAT_ID and HORARIOS:
         threading.Thread(target=agendador, daemon=True).start()
     if TELEGRAM_CHAT_ID and POSTAR_HORARIOS and youtube.configurado() and not metricool.configurado():
@@ -579,10 +611,11 @@ def rodar_bot():
     print("Bot rodando. Ctrl+C para parar.")
     offset = 0
     while True:
-        if fim and time.time() > fim and not _ocupado.locked():
+        if fim and time.time() > fim and not _ocupado.locked() and _ativos == 0:
             break
         try:
-            r = requests.get(f"{API}/getUpdates", params={"offset": offset, "timeout": 50}, timeout=60).json()
+            espera = 50 if not fim else max(1, min(50, int(fim - time.time())))
+            r = requests.get(f"{API}/getUpdates", params={"offset": offset, "timeout": espera}, timeout=espera + 10).json()
             for u in r.get("result", []):
                 offset = u["update_id"] + 1
                 try:

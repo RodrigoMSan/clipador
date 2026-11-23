@@ -1,0 +1,31 @@
+# Confere se a autorização do YouTube (Secrets) funciona, sem enviar vídeo nenhum.
+name: Testar YouTube
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    env:
+      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests
+      - name: Pedir um token ao Google
+        run: |
+          python - <<'PY'
+          import requests, youtube
+          print("Secrets presentes:", youtube.configurado())
+          tok = youtube._token_de_acesso()
+          info = requests.get("https://oauth2.googleapis.com/tokeninfo", params={"access_token": tok}, timeout=30).json()
+          print("Escopo autorizado:", info.get("scope"))
+          print("Válido por (s):", info.get("expires_in"))
+          assert "youtube.upload" in info.get("scope", ""), "O token não tem a permissão youtube.upload"
+          print("OK: a autorização do YouTube funciona.")
+          PY

@@ -22,6 +22,7 @@ import banco
 import coletar
 import montar
 import nuvem
+import metricool
 import youtube
 from progresso import Progresso
 from config import (APROVADOS, HORARIOS, MAX_MINUTOS, NA_NUVEM, PRONTOS, STREAMERS,
@@ -139,6 +140,33 @@ def publicar_youtube(vid, chat=None):
                f"Para tentar de novo: /publicar {vid}", chat)
 
 
+def publicar_metricool(vid, chat=None):
+    """Agenda o vídeo aprovado no Metricool para as redes configuradas."""
+    v = banco.video(vid)
+    if v.get("youtube"):
+        avisar(f"O vídeo #{vid} já foi enviado para publicação.", chat)
+        return
+    try:
+        titulo, descricao = youtube.titulo_e_descricao(v, banco.clipes_do_video(vid))
+        post_id, hora = metricool.agendar(v.get("url"), titulo, descricao)
+        banco.atualizar_video(vid, youtube=f"metricool:{post_id or 'agendado'}")
+        nuvem.salvar_estado(f"vídeo {vid} agendado no Metricool")
+        avisar(f"📅 Vídeo #{vid} agendado no Metricool para as {hora} em: {', '.join(metricool.REDES)}.\n"
+               f"Acompanhe no planejamento do Metricool.", chat)
+    except Exception as e:
+        print(_ocultar(traceback.format_exc()))
+        avisar(f"Não consegui agendar o vídeo #{vid} no Metricool: {_ocultar(e)[:300]}\n"
+               f"Para tentar de novo: /publicar {vid}", chat)
+
+
+def publicar(vid, chat=None):
+    """Depois do Aprovar: usa o Metricool se estiver configurado; senão, o YouTube direto."""
+    if metricool.configurado():
+        publicar_metricool(vid, chat)
+    elif youtube.configurado():
+        publicar_youtube(vid, chat)
+
+
 def enviar_para_aprovacao(vid, prog=None, tentativas=4):
     """Sobe a prévia do vídeo para o Telegram com progresso real e novas tentativas se a conexão cair."""
     v = banco.video(vid)
@@ -240,7 +268,7 @@ def decidir(cb):
         link = f"\n\nArquivo para postar: {v['url']}" if v.get("url") else ""
         chamar("editMessageCaption", chat_id=chat, message_id=msg_id,
                caption=(f"✅ APROVADO{link}\n\n{texto_video(banco.video(vid))}")[:1024])
-        threading.Thread(target=publicar_youtube, args=(vid, chat), daemon=True).start()
+        threading.Thread(target=publicar, args=(vid, chat), daemon=True).start()
         return "Aprovado"
 
     if acao == "rp":
@@ -306,7 +334,10 @@ def tratar_mensagem(m):
     elif texto.startswith("/publicar"):
         partes = texto.split()
         if len(partes) > 1 and partes[1].isdigit():
-            threading.Thread(target=publicar_youtube, args=(int(partes[1]), chat), daemon=True).start()
+            vid = int(partes[1])
+            if banco.video(vid) and (banco.video(vid).get("youtube") or "").startswith("metricool:"):
+                banco.atualizar_video(vid, youtube=None)  # tentar de novo
+            threading.Thread(target=publicar, args=(vid, chat), daemon=True).start()
         else:
             avisar("Use assim: /publicar 3 (o número do vídeo).", chat)
     elif texto.startswith("/pendentes"):

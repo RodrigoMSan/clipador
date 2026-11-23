@@ -16,7 +16,21 @@ Configuração (uma vez):
 
 Não deixe o bot ligado no PC ao mesmo tempo: dois bots com o mesmo token brigam pelas mensagens.
 
-## Publicar no YouTube automaticamente
+## Publicar nas redes pelo Metricool (recomendado)
+
+Quando você aperta **Aprovar**, o bot agenda o vídeo no Metricool para dali a 5 minutos, no YouTube Shorts, TikTok, Instagram Reels e Facebook Reels ao mesmo tempo. Requer o plano **Advanced** do Metricool (é o que libera a API).
+
+Configuração (uma vez):
+
+1. No Metricool, conecte as redes da marca.
+2. Em **Configurações da conta > API**, copie o token de acesso.
+3. Com a marca aberta no Metricool, olhe o endereço do navegador: o número depois de `userId=` é o seu ID de usuário.
+4. No GitHub, em Secrets, crie `METRICOOL_TOKEN` (o token) e `METRICOOL_USER_ID` (o número).
+5. Opcional, em Variables: `METRICOOL_REDES` para escolher as redes (ex.: `youtube,tiktok`).
+
+Se der erro, `/publicar 3` tenta de novo.
+
+## Alternativa: YouTube direto (sem Metricool)
 
 Quando você aperta **Aprovar**, o bot publica o vídeo como Short no YouTube e manda o link no Telegram. Se der erro, `/publicar 3` tenta de novo (3 = número do vídeo). Sem senha: usa uma autorização do Google.
 
@@ -84,6 +98,7 @@ Mais tarde, para rodar 24 horas sem o PC, o mesmo código vai para um servidor n
 | `instalar_inicio_automatico.bat` | Faz o bot ligar junto com o Windows |
 | `nuvem.py` | Salva o estado e guarda os vídeos quando roda no GitHub |
 | `.github/workflows/clipador.yml` | Agenda os turnos do bot no GitHub Actions |
+| `metricool.py` | Agenda o vídeo aprovado nas 4 redes pelo Metricool |
 | `youtube.py` | Publica o vídeo aprovado no YouTube Shorts |
 | `banco.py` | Guarda clipes usados e status dos vídeos (`dados/clipador.db`) |
 

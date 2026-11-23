@@ -11,10 +11,10 @@ load_dotenv(BASE / ".env")
 STREAMERS = ["alanzoka"]
 
 # Períodos de clipes buscados na Twitch ("24hr", "7d", "30d", "all"), separados por vírgula.
-# "all" dá o estoque dos melhores de sempre; "7d" traz clipes novos toda semana.
-PERIODOS = [p.strip() for p in os.getenv("CLIPADOR_PERIODOS", "all,7d").split(",") if p.strip()]
+# "all" dá o estoque dos melhores de sempre; "7d" e "24hr" trazem os clipes novos das lives.
+PERIODOS = [p.strip() for p in os.getenv("CLIPADOR_PERIODOS", "all,7d,24hr").split(",") if p.strip()]
 # Quantos clipes olhar por streamer a cada busca
-CLIPES_POR_BUSCA = 60
+CLIPES_POR_BUSCA = 100
 
 # Duração do vídeo final (sem contar a tela final)
 DURACAO_MIN = 65

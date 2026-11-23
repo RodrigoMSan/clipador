@@ -177,6 +177,7 @@ def gerar_e_enviar(streamer, chat):
             banco.atualizar_video(vid, url=nuvem.guardar_video(banco.video(vid)["arquivo"]))
             nuvem.salvar_estado(f"vídeo {vid} montado")
         enviar_para_aprovacao(vid, barra.faixa(80, 100))
+        avisar_estoque_baixo()
     except Exception as e:  # mantém o bot de pé
         print(_ocultar(traceback.format_exc()))
         avisar(f"Erro: {_ocultar(e)[:400]}", chat)
@@ -269,6 +270,7 @@ def tratar_mensagem(m):
         threading.Thread(target=reenviar_pendentes, args=(chat,), daemon=True).start()
     elif texto.startswith("/status"):
         c = {s: len(banco.videos_por_status(s)) for s in ("aguardando", "aprovado", "reprovado")}
+        avisar(texto_estoque(), chat)
         auto = (f"ligada ({', '.join(HORARIOS)})" if _auto_ligado() and HORARIOS else "desligada")
         avisar(f"Aguardando: {c['aguardando']}\nAprovados: {c['aprovado']}\nReprovados: {c['reprovado']}\n"
                f"Geração automática: {auto}", chat)
@@ -280,6 +282,27 @@ def tratar_mensagem(m):
         banco.definir_meta("auto_pausado", "0")
         nuvem.salvar_estado("retomado")
         avisar(f"Geração automática ligada: {', '.join(HORARIOS) or 'nenhum horário no .env'}.", chat)
+
+
+def texto_estoque():
+    """Quantos clipes ainda não usados existem e para quantos vídeos eles dão."""
+    linhas = []
+    for st in STREAMERS:
+        livres = [c for c in banco.clipes_livres(st) if c["duracao"] >= montar.CLIPE_MIN]
+        seg = sum(c["duracao"] for c in livres)
+        novos = sum(1 for c in livres if c["data"] >= (datetime.now().strftime("%Y%m%d")))
+        linhas.append(f"📦 {st}: {len(livres)} clipes livres (~{int(seg // 75)} vídeos), {novos} de hoje")
+    return "\n".join(linhas)
+
+
+def avisar_estoque_baixo():
+    for st in STREAMERS:
+        livres = [c for c in banco.clipes_livres(st) if c["duracao"] >= montar.CLIPE_MIN]
+        videos = int(sum(c["duracao"] for c in livres) // 75)
+        if videos <= 4 and banco.meta(f"aviso_estoque_{st}") != datetime.now().strftime("%Y-%m-%d"):
+            banco.definir_meta(f"aviso_estoque_{st}", datetime.now().strftime("%Y-%m-%d"))
+            avisar(f"⚠️ Estoque baixo de {st}: só dá para uns {videos} vídeos. "
+                   f"Os clipes novos das lives entram sozinhos; se quiser, adicione outro streamer.")
 
 
 def _horario_devido(agora):

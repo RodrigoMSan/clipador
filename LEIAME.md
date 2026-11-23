@@ -11,7 +11,7 @@ Configuração (uma vez):
 1. No repositório, vá em **Settings > Secrets and variables > Actions > New repository secret** e crie:
    - `TELEGRAM_TOKEN`: o token do BotFather
    - `TELEGRAM_CHAT_ID`: o número do seu chat
-2. Na aba **Variables** (mesma tela), opcional: `CLIPADOR_ARROBA` (ex.: `@clipador`) e `CLIPADOR_HORARIOS` (ex.: `10:00,18:00`, horário de Brasília).
+2. Na aba **Variables** (mesma tela), opcional: `CLIPADOR_ARROBA` (ex.: `@clipador`) e `CLIPADOR_HORARIOS` (padrão `18:00`, horário de Brasília) e `CLIPADOR_POR_HORARIO` (padrão `2`: toda noite às 18h ele monta os 2 vídeos do dia seguinte).
 3. Na aba **Actions**, abra "Clipador" e clique em **Run workflow** para ligar na hora. Depois ele se religa sozinho a cada 6 horas.
 
 Não deixe o bot ligado no PC ao mesmo tempo: dois bots com o mesmo token brigam pelas mensagens.
@@ -62,6 +62,7 @@ Para mudar token, @ ou horários depois: abra o arquivo `.env` com o Bloco de No
 No chat do bot:
 
 - `/gerar` monta um vídeo novo do alanzoka e envia para aprovação. Uma mensagem com barra de progresso mostra cada etapa.
+- `/gerar todos` monta todos os vídeos que o estoque de clipes permite (portfólio); `/gerar 5` monta 5. Se o turno acabar no meio, o próximo continua.
 - **Aprovar** move o vídeo para `dados/aprovados/`, de onde ele vai para a publicação.
 - **Reprovar** pede o motivo. "Corte ruim" devolve os clipes para uma nova montagem; os outros motivos descartam os clipes.
 - **Editar legenda**: a próxima mensagem que você mandar vira a legenda.
@@ -76,7 +77,7 @@ O bot só responde ao chat do `TELEGRAM_CHAT_ID`.
 
 1. Teste antes com o **Abrir Clipador.bat**: mande `/gerar` e veja o vídeo chegar.
 2. Feche essa janela e dê dois cliques em `instalar_inicio_automatico.bat`. A partir daí o Clipador liga sozinho, sem janela, sempre que o Windows iniciar, e religa sozinho se cair.
-3. Nos horários de `CLIPADOR_HORARIOS` no `.env` (padrão 10:00 e 18:00) ele monta um vídeo e manda no Telegram. Você só aprova.
+3. Nos horários de `CLIPADOR_HORARIOS` no `.env` (padrão 18:00, 2 vídeos) ele monta os vídeos e manda no Telegram. Você só aprova.
 4. Para o PC não dormir: Configurações > Sistema > Energia > Suspensão: "Nunca" quando ligado na tomada.
 
 O que acontece fica registrado em `clipador.log`. Para parar de vez, apague o arquivo `Clipador.vbs` da pasta de inicialização (o instalador mostra onde ele fica) e reinicie o PC.

@@ -5,7 +5,12 @@ name: Clipador
 on:
   schedule:
     - cron: "0 0,6,12,18 * * *"   # um turno a cada 6 h (horário UTC)
-  workflow_dispatch: {}            # botão "Run workflow" para ligar na hora
+  workflow_dispatch:               # botão "Run workflow" para ligar na hora
+    inputs:
+      gerar_todos:
+        description: "Montar agora todos os vídeos que o estoque de clipes permite"
+        type: boolean
+        default: false
 
 permissions:
   contents: write                  # salvar o estado e guardar os vídeos nas Releases
@@ -24,7 +29,9 @@ jobs:
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       CLIPADOR_ARROBA: ${{ vars.CLIPADOR_ARROBA || '@clipador' }}
-      CLIPADOR_HORARIOS: ${{ vars.CLIPADOR_HORARIOS || '10:00,18:00' }}
+      CLIPADOR_HORARIOS: ${{ vars.CLIPADOR_HORARIOS || '18:00' }}
+      CLIPADOR_POR_HORARIO: ${{ vars.CLIPADOR_POR_HORARIO || '2' }}
+      CLIPADOR_GERAR_TODOS: ${{ inputs.gerar_todos || 'false' }}
       CLIPADOR_MAX_MINUTOS: "340"
       GH_TOKEN: ${{ github.token }}
       METRICOOL_TOKEN: ${{ secrets.METRICOOL_TOKEN }}

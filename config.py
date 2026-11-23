@@ -26,9 +26,11 @@ CLIPE_MIN = 8
 NOSSO_ARROBA = os.getenv("CLIPADOR_ARROBA", "@clipador")
 TELA_FINAL_SEG = 2.5
 
-# Horários em que o bot monta e envia um vídeo sozinho (horário do computador), separados por vírgula.
+# Horários em que o bot monta e envia vídeos sozinho (horário do computador), separados por vírgula.
 # Deixe vazio para só gerar quando você mandar /gerar.
-HORARIOS = [h.strip() for h in os.getenv("CLIPADOR_HORARIOS", "10:00,18:00").split(",") if h.strip()]
+HORARIOS = [h.strip() for h in os.getenv("CLIPADOR_HORARIOS", "18:00").split(",") if h.strip()]
+# Quantos vídeos montar em cada horário (padrão: 2, os posts das 12h e 18h do dia seguinte)
+POR_HORARIO = int(os.getenv("CLIPADOR_POR_HORARIO", "2") or 2)
 
 # Caminho relativo à pasta do projeto (evita o "C:" do Windows quebrar o filtro do FFmpeg)
 FONTE = "assets/InterDisplay-Bold.otf"

@@ -8,6 +8,7 @@ Comandos no chat:
   /pausar /retomar  liga e desliga a geração automática nos horários do .env
 """
 import json
+import os
 import shutil
 import threading
 import time
@@ -25,7 +26,7 @@ import nuvem
 import metricool
 import youtube
 from progresso import Progresso
-from config import (APROVADOS, HORARIOS, MAX_MINUTOS, NA_NUVEM, PRONTOS, STREAMERS,
+from config import (APROVADOS, HORARIOS, MAX_MINUTOS, NA_NUVEM, POR_HORARIO, PRONTOS, STREAMERS,
                     TELEGRAM_CHAT_ID, TELEGRAM_TOKEN)
 
 API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
@@ -36,6 +37,7 @@ MOTIVOS = {
     "outro": "Outro",
 }
 _ocupado = threading.Lock()
+_fim_do_turno = None  # hora (time.time) em que o turno na nuvem acaba
 
 
 def _auto_ligado():
@@ -224,29 +226,77 @@ def reenviar_pendentes(chat):
             avisar(_ocultar(e)[:400], chat)
 
 
-def gerar_e_enviar(streamer, chat):
-    if not _ocupado.acquire(blocking=False):
+def gerar_e_enviar(streamer, chat, buscar=True, esperar=False):
+    """Monta um vídeo e envia para aprovação. Devolve o número do vídeo, None se faltam clipes,
+    ou False se deu erro ou já havia outra montagem em andamento."""
+    if not _ocupado.acquire(blocking=esperar):
         avisar("Já estou montando um vídeo, aguarde terminar.", chat)
-        return
+        return False
     try:
         barra = nova_barra(f"🎬 Clipador · {streamer}", chat)
-        barra.atualizar(0, "Buscando os clipes mais vistos na Twitch", True)
-        coletar.coletar()
+        if buscar:
+            barra.atualizar(0, "Buscando os clipes mais vistos na Twitch", True)
+            coletar.coletar()
         vid = montar.gerar_video(streamer, barra.faixa(5, 75))
         if vid is None:
             barra.atualizar(100, f"Não há clipes novos de {streamer} suficientes para passar de 1 minuto.", True)
-            return
+            return None
         if NA_NUVEM:
             barra.atualizar(76, "Guardando o vídeo em 1080p no GitHub", True)
             banco.atualizar_video(vid, url=nuvem.guardar_video(banco.video(vid)["arquivo"]))
             nuvem.salvar_estado(f"vídeo {vid} montado")
         enviar_para_aprovacao(vid, barra.faixa(80, 100))
         avisar_estoque_baixo()
+        return vid
     except Exception as e:  # mantém o bot de pé
         print(_ocultar(traceback.format_exc()))
         avisar(f"Erro: {_ocultar(e)[:400]}", chat)
+        return False
     finally:
         _ocupado.release()
+
+
+def gerar_varios(streamer, chat, quantidade=None):
+    """Monta vários vídeos seguidos (quantidade=None: até acabar o estoque de clipes).
+    O pedido fica salvo no banco: se o turno acabar no meio, o próximo turno continua."""
+    restante = "todos" if quantidade is None else int(quantidade)
+    banco.definir_meta("lote", json.dumps({"streamer": streamer, "restante": restante}))
+    nuvem.salvar_estado("lote iniciado")
+    feitos, erros, primeiro = 0, 0, True
+    while restante == "todos" or restante > 0:
+        if _fim_do_turno and time.time() > _fim_do_turno - 8 * 60:
+            print("Turno acabando: o próximo continua o lote.")
+            return
+        vid = gerar_e_enviar(streamer, chat, buscar=primeiro, esperar=True)
+        primeiro = False
+        if vid is None:
+            break
+        if vid is False:
+            erros += 1
+            if erros >= 3:
+                break
+            time.sleep(30)
+            continue
+        feitos += 1
+        if restante != "todos":
+            restante -= 1
+        banco.definir_meta("lote", json.dumps({"streamer": streamer, "restante": restante}))
+        nuvem.salvar_estado(f"lote: vídeo {vid}")
+    banco.definir_meta("lote", "")
+    nuvem.salvar_estado("lote concluído")
+    avisar(f"✅ Lote pronto: {feitos} vídeo(s) de {streamer} enviados para aprovação.\n{texto_estoque()}", chat)
+
+
+def continuar_lote():
+    """Retoma um lote que ficou pela metade no turno anterior."""
+    try:
+        lote = json.loads(banco.meta("lote", "") or "null")
+    except ValueError:
+        lote = None
+    if lote and lote.get("restante") not in (0, None):
+        q = None if lote["restante"] == "todos" else lote["restante"]
+        print(f"Retomando lote: {lote}")
+        gerar_varios(lote["streamer"], TELEGRAM_CHAT_ID, q)
 
 
 def decidir(cb):
@@ -325,12 +375,20 @@ def tratar_mensagem(m):
         avisar(f"Legenda do vídeo #{vid} atualizada.", chat)
         return
     if texto.startswith("/gerar"):
-        partes = texto.split()
-        streamer = partes[1].lower() if len(partes) > 1 else STREAMERS[0]
+        partes = texto.split()[1:]
+        todos = any(p.lower() == "todos" for p in partes)
+        qtd = next((int(p) for p in partes if p.isdigit()), None)
+        nomes = [p.lower() for p in partes if p.lower() != "todos" and not p.isdigit()]
+        streamer = nomes[0] if nomes else STREAMERS[0]
         if streamer not in STREAMERS:
             avisar(f"{streamer} não está na lista de streamers autorizados ({', '.join(STREAMERS)}).", chat)
             return
-        threading.Thread(target=gerar_e_enviar, args=(streamer, chat), daemon=True).start()
+        if todos or (qtd and qtd > 1):
+            avisar(f"Vou montar {'todos os vídeos que o estoque permite' if todos else f'{qtd} vídeos'} de {streamer}, "
+                   "um atrás do outro. Cada um chega aqui para aprovar.", chat)
+            threading.Thread(target=gerar_varios, args=(streamer, chat, None if todos else qtd), daemon=True).start()
+        else:
+            threading.Thread(target=gerar_e_enviar, args=(streamer, chat), daemon=True).start()
     elif texto.startswith("/publicar"):
         partes = texto.split()
         if len(partes) > 1 and partes[1].isdigit():
@@ -395,7 +453,7 @@ def _horario_devido(agora):
 
 
 def agendador():
-    """Nos horários do .env, monta um vídeo e envia (um streamer por vez, em rodízio).
+    """Nos horários do .env, monta POR_HORARIO vídeos e envia (um streamer por vez, em rodízio).
     Se o bot estava desligado na hora certa, faz assim que ligar (até 3 h depois)."""
     while True:
         try:
@@ -405,8 +463,13 @@ def agendador():
                 n = int(banco.meta("proximo_streamer", "0"))
                 banco.definir_meta("proximo_streamer", n + 1)
                 streamer = STREAMERS[n % len(STREAMERS)]
-                print(f"[{chave}] geração automática: {streamer}")
-                gerar_e_enviar(streamer, TELEGRAM_CHAT_ID)
+                print(f"[{chave}] geração automática: {POR_HORARIO} vídeo(s) de {streamer}")
+                if banco.meta("lote", ""):
+                    print("Já há um lote em andamento; ele cobre este horário.")
+                elif POR_HORARIO > 1:
+                    gerar_varios(streamer, TELEGRAM_CHAT_ID, POR_HORARIO)
+                else:
+                    gerar_e_enviar(streamer, TELEGRAM_CHAT_ID)
         except Exception:
             print(_ocultar(traceback.format_exc()))
         time.sleep(20)
@@ -429,14 +492,20 @@ def rodar_bot():
     if not TELEGRAM_TOKEN:
         raise SystemExit("Falta TELEGRAM_TOKEN (no .env, ou nos Secrets do GitHub).")
     nuvem.restaurar_estado()
+    global _fim_do_turno
     fim = time.time() + MAX_MINUTOS * 60 if MAX_MINUTOS else None
+    _fim_do_turno = fim
     chamar("setMyCommands", commands=[
-        {"command": "gerar", "description": "Montar um vídeo novo e enviar para aprovação"},
+        {"command": "gerar", "description": "Montar um vídeo (ou: /gerar todos, /gerar 5)"},
         {"command": "pendentes", "description": "Reenviar vídeos ainda não decididos"},
         {"command": "status", "description": "Resumo de aprovados e reprovados"},
         {"command": "pausar", "description": "Pausar a geração automática"},
         {"command": "retomar", "description": "Retomar a geração automática"},
     ])
+    if TELEGRAM_CHAT_ID and os.getenv("CLIPADOR_GERAR_TODOS", "").lower() == "true" and not banco.meta("lote", ""):
+        banco.definir_meta("lote", json.dumps({"streamer": STREAMERS[0], "restante": "todos"}))
+    if TELEGRAM_CHAT_ID:
+        threading.Thread(target=continuar_lote, daemon=True).start()
     if TELEGRAM_CHAT_ID and HORARIOS:
         threading.Thread(target=agendador, daemon=True).start()
         print(f"Geração automática nos horários: {', '.join(HORARIOS)}")

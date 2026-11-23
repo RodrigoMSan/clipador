@@ -13,7 +13,7 @@ import shutil
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -26,7 +26,8 @@ import nuvem
 import metricool
 import youtube
 from progresso import Progresso
-from config import (APROVADOS, HORARIOS, MAX_MINUTOS, NA_NUVEM, POR_HORARIO, PRONTOS, STREAMERS,
+from config import (APROVADOS, BASE, HORARIOS, MAX_MINUTOS, NA_NUVEM, POR_HORARIO, POSTAR_DESDE, POSTAR_HORARIOS,
+                    PRONTOS, STREAMERS,
                     TELEGRAM_CHAT_ID, TELEGRAM_TOKEN)
 
 API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
@@ -161,12 +162,75 @@ def publicar_metricool(vid, chat=None):
                f"Para tentar de novo: /publicar {vid}", chat)
 
 
-def publicar(vid, chat=None):
-    """Depois do Aprovar: usa o Metricool se estiver configurado; senão, o YouTube direto."""
+def publicar(vid, chat=None, manual=False):
+    """Depois do Aprovar: usa o Metricool se estiver configurado; senão, o YouTube direto.
+    Com horários de postagem (CLIPADOR_POSTAR), o YouTube espera o horário, a não ser no /publicar."""
     if metricool.configurado():
         publicar_metricool(vid, chat)
-    elif youtube.configurado():
+    elif youtube.configurado() and (manual or not POSTAR_HORARIOS):
         publicar_youtube(vid, chat)
+
+
+def _ja_publicados():
+    """Vídeos que já foram (ou vão ser) para o YouTube por fora do bot, um id por linha em ja_publicados.txt."""
+    arq = Path(BASE) / "ja_publicados.txt"
+    if not arq.exists():
+        return set()
+    return {int(x) for x in arq.read_text().split() if x.strip().isdigit()}
+
+
+def proximo_para_postar():
+    """Escolhe o próximo aprovado para o YouTube: primeiro os de clipes dos últimos 3 dias
+    (mais novo primeiro), depois o portfólio em ordem."""
+    fora = _ja_publicados()
+    limite = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
+    candidatos = []
+    for v in banco.videos_por_status("aprovado"):
+        if v.get("youtube") or v["id"] in fora:
+            continue
+        datas = [c["data"] or "" for c in banco.clipes_do_video(v["id"])]
+        mais_novo = max(datas) if datas else ""
+        candidatos.append((0 if mais_novo >= limite else 1, "" if mais_novo < limite else _inverso(mais_novo), v["id"]))
+    return min(candidatos)[2] if candidatos else None
+
+
+def _inverso(data):
+    """Ordena datas AAAAMMDD da mais nova para a mais antiga."""
+    return "".join(str(9 - int(ch)) for ch in data if ch.isdigit())
+
+
+def _postagem_devida(agora):
+    feitos = json.loads(banco.meta("postagens_feitas", "[]"))
+    if POSTAR_DESDE and agora.strftime("%Y-%m-%d") < POSTAR_DESDE:
+        return None, feitos
+    for h in POSTAR_HORARIOS:
+        try:
+            hh, mm = (int(x) for x in h.split(":"))
+        except ValueError:
+            continue
+        alvo = agora.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        chave = alvo.strftime("%Y-%m-%d %H:%M")
+        if 0 <= (agora - alvo).total_seconds() < 3 * 3600 and chave not in feitos:
+            return chave, feitos
+    return None, feitos
+
+
+def postador():
+    """Nos horários de postagem, publica no YouTube o próximo vídeo aprovado."""
+    while True:
+        try:
+            chave, feitos = _postagem_devida(datetime.now())
+            if chave:
+                banco.definir_meta("postagens_feitas", json.dumps((feitos + [chave])[-20:]))
+                vid = proximo_para_postar()
+                if vid is None:
+                    avisar("📭 Hora de postar, mas não há vídeo aprovado na fila. Aprove alguns no Telegram.")
+                else:
+                    print(f"[{chave}] postando vídeo {vid} no YouTube")
+                    publicar_youtube(vid, TELEGRAM_CHAT_ID)
+        except Exception:
+            print(_ocultar(traceback.format_exc()))
+        time.sleep(30)
 
 
 def enviar_para_aprovacao(vid, prog=None, tentativas=4):
@@ -395,7 +459,7 @@ def tratar_mensagem(m):
             vid = int(partes[1])
             if banco.video(vid) and (banco.video(vid).get("youtube") or "").startswith("metricool:"):
                 banco.atualizar_video(vid, youtube=None)  # tentar de novo
-            threading.Thread(target=publicar, args=(vid, chat), daemon=True).start()
+            threading.Thread(target=publicar, args=(vid, chat, True), daemon=True).start()
         else:
             avisar("Use assim: /publicar 3 (o número do vídeo).", chat)
     elif texto.startswith("/pendentes"):
@@ -508,6 +572,9 @@ def rodar_bot():
         threading.Thread(target=continuar_lote, daemon=True).start()
     if TELEGRAM_CHAT_ID and HORARIOS:
         threading.Thread(target=agendador, daemon=True).start()
+    if TELEGRAM_CHAT_ID and POSTAR_HORARIOS and youtube.configurado() and not metricool.configurado():
+        threading.Thread(target=postador, daemon=True).start()
+        print(f"Postagem no YouTube nos horários: {', '.join(POSTAR_HORARIOS)}")
         print(f"Geração automática nos horários: {', '.join(HORARIOS)}")
     print("Bot rodando. Ctrl+C para parar.")
     offset = 0

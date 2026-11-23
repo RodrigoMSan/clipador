@@ -30,9 +30,9 @@ Configuração (uma vez):
 
 Se der erro, `/publicar 3` tenta de novo.
 
-## Alternativa: YouTube direto (sem Metricool)
+## YouTube direto (sem Metricool)
 
-Quando você aperta **Aprovar**, o bot publica o vídeo como Short no YouTube e manda o link no Telegram. Se der erro, `/publicar 3` tenta de novo (3 = número do vídeo). Sem senha: usa uma autorização do Google.
+O bot publica no YouTube um vídeo aprovado em cada horário de `CLIPADOR_POSTAR` (padrão `12:00,18:00`): primeiro os de clipes dos últimos 3 dias, depois o portfólio. O link chega no Telegram. Vídeos listados em `ja_publicados.txt` são pulados. Se der erro, `/publicar 3` tenta de novo (3 = número do vídeo). Sem senha: usa uma autorização do Google.
 
 Configuração (uma vez, ~15 min), tudo no navegador:
 

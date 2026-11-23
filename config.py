@@ -29,6 +29,11 @@ TELA_FINAL_SEG = 2.5
 # Horários em que o bot monta e envia vídeos sozinho (horário do computador), separados por vírgula.
 # Deixe vazio para só gerar quando você mandar /gerar.
 HORARIOS = [h.strip() for h in os.getenv("CLIPADOR_HORARIOS", "18:00").split(",") if h.strip()]
+# Horários em que o bot publica sozinho o próximo vídeo aprovado no YouTube (um por horário).
+# Vazio: publica logo depois do Aprovar (comportamento antigo).
+POSTAR_HORARIOS = [h.strip() for h in os.getenv("CLIPADOR_POSTAR", "12:00,18:00").split(",") if h.strip()]
+# Só começa a postar a partir desta data (AAAA-MM-DD); antes disso o Metricool cuida.
+POSTAR_DESDE = os.getenv("CLIPADOR_POSTAR_DESDE", "")
 # Quantos vídeos montar em cada horário (padrão: 2, os posts das 12h e 18h do dia seguinte)
 POR_HORARIO = int(os.getenv("CLIPADOR_POR_HORARIO", "2") or 2)
 

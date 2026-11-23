@@ -16,6 +16,21 @@ Configuração (uma vez):
 
 Não deixe o bot ligado no PC ao mesmo tempo: dois bots com o mesmo token brigam pelas mensagens.
 
+## Publicar no YouTube automaticamente
+
+Quando você aperta **Aprovar**, o bot publica o vídeo como Short no YouTube e manda o link no Telegram. Se der erro, `/publicar 3` tenta de novo (3 = número do vídeo). Sem senha: usa uma autorização do Google.
+
+Configuração (uma vez, ~15 min), tudo no navegador:
+
+1. Em [console.cloud.google.com](https://console.cloud.google.com), crie um projeto chamado `clipador`.
+2. Em **APIs e serviços > Biblioteca**, ative a **YouTube Data API v3**.
+3. Em **Tela de permissão OAuth**: tipo **Externo**, nome `Clipador`, seu e-mail. Em **Usuários de teste**, adicione o e-mail da conta do YouTube. Depois clique em **Publicar app** (para a autorização não vencer em 7 dias).
+4. Em **Credenciais > Criar credenciais > ID do cliente OAuth**: tipo **Aplicativo da Web**; em URIs de redirecionamento autorizados, adicione `https://developers.google.com/oauthplayground`. Guarde o **ID do cliente** e a **Chave secreta**.
+5. Abra [OAuth Playground](https://developers.google.com/oauthplayground): na engrenagem, marque **Use your own OAuth credentials** e cole o ID e a chave. À esquerda, digite `https://www.googleapis.com/auth/youtube.upload`, clique em **Authorize APIs**, entre com a conta do canal e permita. Clique em **Exchange authorization code for tokens** e copie o **Refresh token**.
+6. No GitHub, em Secrets, crie `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` e `YOUTUBE_REFRESH_TOKEN`.
+
+Aviso do Google: projetos novos só podem subir vídeos como privados até passarem pela [auditoria gratuita da API](https://support.google.com/youtube/contact/yt_api_form). Até lá, o bot avisa e você muda para Público com um clique.
+
 ## Rodar no PC (dois cliques)
 
 Dê dois cliques em **Abrir Clipador.bat**. Na primeira vez ele:
@@ -36,6 +51,7 @@ No chat do bot:
 - **Aprovar** move o vídeo para `dados/aprovados/`, de onde ele vai para a publicação.
 - **Reprovar** pede o motivo. "Corte ruim" devolve os clipes para uma nova montagem; os outros motivos descartam os clipes.
 - **Editar legenda**: a próxima mensagem que você mandar vira a legenda.
+- `/publicar 3` publica (ou tenta de novo) o vídeo 3 no YouTube.
 - `/pendentes` reenvia o que ainda não foi decidido; `/status` mostra o resumo.
 
 - `/pausar` e `/retomar` desligam e ligam a geração automática.
@@ -68,6 +84,7 @@ Mais tarde, para rodar 24 horas sem o PC, o mesmo código vai para um servidor n
 | `instalar_inicio_automatico.bat` | Faz o bot ligar junto com o Windows |
 | `nuvem.py` | Salva o estado e guarda os vídeos quando roda no GitHub |
 | `.github/workflows/clipador.yml` | Agenda os turnos do bot no GitHub Actions |
+| `youtube.py` | Publica o vídeo aprovado no YouTube Shorts |
 | `banco.py` | Guarda clipes usados e status dos vídeos (`dados/clipador.db`) |
 
 ## Limites desta versão

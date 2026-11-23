@@ -43,6 +43,8 @@ def conectar():
     colunas = {r[1] for r in con.execute("PRAGMA table_info(videos)")}
     if "url" not in colunas:  # link público do vídeo em 1080p (versão na nuvem)
         con.execute("ALTER TABLE videos ADD COLUMN url TEXT")
+    if "youtube" not in colunas:  # link do Short publicado
+        con.execute("ALTER TABLE videos ADD COLUMN youtube TEXT")
     return con
 
 
@@ -112,3 +114,12 @@ def liberar_clipes(vid):
 def videos_por_status(status):
     with conectar() as con:
         return [dict(r) for r in con.execute("SELECT * FROM videos WHERE status=? ORDER BY id", (status,))]
+
+
+def clipes_do_video(vid):
+    v = video(vid)
+    ids = json.loads(v["clipes"]) if v else []
+    with conectar() as con:
+        por_id = {r["id"]: dict(r) for r in con.execute(
+            f"SELECT * FROM clipes WHERE id IN ({','.join('?' * len(ids))})", ids)} if ids else {}
+    return [por_id[i] for i in ids if i in por_id]

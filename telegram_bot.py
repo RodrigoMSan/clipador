@@ -22,6 +22,7 @@ import banco
 import coletar
 import montar
 import nuvem
+import youtube
 from progresso import Progresso
 from config import (APROVADOS, HORARIOS, MAX_MINUTOS, NA_NUVEM, PRONTOS, STREAMERS,
                     TELEGRAM_CHAT_ID, TELEGRAM_TOKEN)
@@ -95,13 +96,10 @@ def criar_previa(arquivo):
     return previa
 
 
-def enviar_para_aprovacao(vid, prog=None, tentativas=4):
-    """Sobe a prévia do vídeo para o Telegram com progresso real e novas tentativas se a conexão cair."""
+def garantir_arquivo(vid):
+    """Na nuvem o computador muda a cada turno: baixa o vídeo da Release se ele não estiver aqui."""
     v = banco.video(vid)
-    if prog is None:
-        prog = nova_barra(f"📤 Enviando vídeo #{vid}").atualizar
-    if not Path(v["arquivo"]).exists() and v.get("url"):  # na nuvem: o vídeo fica guardado na Release
-        prog(0, "Buscando o vídeo guardado", True)
+    if not Path(v["arquivo"]).exists() and v.get("url"):
         destino = PRONTOS / Path(v["url"]).name
         with requests.get(v["url"], stream=True, timeout=120) as resp:
             resp.raise_for_status()
@@ -110,6 +108,44 @@ def enviar_para_aprovacao(vid, prog=None, tentativas=4):
                     f.write(parte)
         banco.atualizar_video(vid, arquivo=str(destino))
         v = banco.video(vid)
+    return v
+
+
+def publicar_youtube(vid, chat=None):
+    """Publica o vídeo aprovado no YouTube Shorts e avisa no Telegram."""
+    if not youtube.configurado():
+        return
+    v = banco.video(vid)
+    if v.get("youtube"):
+        avisar(f"O vídeo #{vid} já está no YouTube: {v['youtube']}", chat)
+        return
+    barra = nova_barra(f"▶️ YouTube · vídeo #{vid}", chat)
+    try:
+        barra.atualizar(0, "Preparando o vídeo", True)
+        v = garantir_arquivo(vid)
+        clipes = [c for c in banco.clipes_do_video(vid)]
+        titulo, descricao = youtube.titulo_e_descricao(v, clipes)
+        link, privacidade = youtube.publicar(v["arquivo"], titulo, descricao,
+                                             tags=[v["streamer"], "twitch", "clipes", "shorts"],
+                                             prog=barra.atualizar)
+        banco.atualizar_video(vid, youtube=link)
+        nuvem.salvar_estado(f"vídeo {vid} no YouTube")
+        extra = ("\n\nO YouTube deixou como PRIVADO (o projeto do Google ainda não passou pela análise). "
+                 "Abra o link e mude para Público.") if privacidade == "private" and youtube.PRIVACIDADE != "private" else ""
+        avisar(f"✅ Vídeo #{vid} publicado no YouTube: {link}{extra}", chat)
+    except Exception as e:
+        print(_ocultar(traceback.format_exc()))
+        avisar(f"Não consegui publicar o vídeo #{vid} no YouTube: {_ocultar(e)[:300]}\n"
+               f"Para tentar de novo: /publicar {vid}", chat)
+
+
+def enviar_para_aprovacao(vid, prog=None, tentativas=4):
+    """Sobe a prévia do vídeo para o Telegram com progresso real e novas tentativas se a conexão cair."""
+    v = banco.video(vid)
+    if prog is None:
+        prog = nova_barra(f"📤 Enviando vídeo #{vid}").atualizar
+    prog(0, "Preparando o vídeo", True)
+    v = garantir_arquivo(vid)
     if NA_NUVEM and Path(v["arquivo"]).stat().st_size < 48e6:
         previa = Path(v["arquivo"])  # internet do servidor é boa: manda o 1080p direto
     else:
@@ -204,6 +240,7 @@ def decidir(cb):
         link = f"\n\nArquivo para postar: {v['url']}" if v.get("url") else ""
         chamar("editMessageCaption", chat_id=chat, message_id=msg_id,
                caption=(f"✅ APROVADO{link}\n\n{texto_video(banco.video(vid))}")[:1024])
+        threading.Thread(target=publicar_youtube, args=(vid, chat), daemon=True).start()
         return "Aprovado"
 
     if acao == "rp":
@@ -266,6 +303,12 @@ def tratar_mensagem(m):
             avisar(f"{streamer} não está na lista de streamers autorizados ({', '.join(STREAMERS)}).", chat)
             return
         threading.Thread(target=gerar_e_enviar, args=(streamer, chat), daemon=True).start()
+    elif texto.startswith("/publicar"):
+        partes = texto.split()
+        if len(partes) > 1 and partes[1].isdigit():
+            threading.Thread(target=publicar_youtube, args=(int(partes[1]), chat), daemon=True).start()
+        else:
+            avisar("Use assim: /publicar 3 (o número do vídeo).", chat)
     elif texto.startswith("/pendentes"):
         threading.Thread(target=reenviar_pendentes, args=(chat,), daemon=True).start()
     elif texto.startswith("/status"):

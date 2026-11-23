@@ -27,6 +27,10 @@ jobs:
       CLIPADOR_HORARIOS: ${{ vars.CLIPADOR_HORARIOS || '10:00,18:00' }}
       CLIPADOR_MAX_MINUTOS: "340"
       GH_TOKEN: ${{ github.token }}
+      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+      YOUTUBE_PRIVACIDADE: ${{ vars.YOUTUBE_PRIVACIDADE || 'public' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

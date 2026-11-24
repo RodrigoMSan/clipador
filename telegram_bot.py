@@ -532,7 +532,7 @@ def avisar_estoque_baixo():
 
 
 def _horario_devido(agora):
-    """Devolve o horário de hoje que já passou (há menos de 3 h) e ainda não foi feito."""
+    """Devolve o horário de hoje que já passou (há menos de 4 h; a tarefa na nuvem roda 18h25 e 21h25) e ainda não foi feito."""
     feitos = json.loads(banco.meta("horarios_feitos", "[]"))
     for h in HORARIOS:
         try:
@@ -541,7 +541,7 @@ def _horario_devido(agora):
             continue
         alvo = agora.replace(hour=hh, minute=mm, second=0, microsecond=0)
         chave = alvo.strftime("%Y-%m-%d %H:%M")
-        if 0 <= (agora - alvo).total_seconds() < 3 * 3600 and chave not in feitos:
+        if 0 <= (agora - alvo).total_seconds() < 4 * 3600 and chave not in feitos:
             return chave, feitos
     return None, feitos
 

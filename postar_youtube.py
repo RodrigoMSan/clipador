@@ -1,4 +1,5 @@
-"""Posta no YouTube o próximo vídeo aprovado, sem o bot ligado (usado quando o Actions está fora).
+"""Posta o próximo vídeo aprovado no YouTube e, com META_TOKEN, nos Reels do Instagram e do Facebook,
+sem o bot ligado (usado quando o Actions está fora).
 
 Lê o estado do ramo `estado`, escolhe o próximo aprovado (clipes dos últimos 3 dias primeiro,
 depois o portfólio por número), baixa o 1080p das Releases, envia ao YouTube, grava o link no
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import requests
 
+import meta
 import youtube
 
 REPO = "https://github.com/RodrigoMSan/clipador"
@@ -55,7 +57,10 @@ def main():
     if "--teste" in sys.argv:
         tok = youtube._token_de_acesso()
         info = requests.get("https://oauth2.googleapis.com/tokeninfo", params={"access_token": tok}, timeout=30).json()
-        print("Autorização OK. Escopo:", info.get("scope"))
+        print("YouTube OK. Escopo:", info.get("scope"))
+        if meta.configurado():
+            pagina, _, ig = meta.contas()
+            print("Meta OK. Página:", pagina, "Instagram:", ig)
         return
     pasta = Path(tempfile.mkdtemp())
     git("clone", "-q", "--depth", "1", "-b", "estado", REPO, str(pasta / "estado"), cwd=pasta)
@@ -80,16 +85,36 @@ def main():
     legiveis = [c for c in por_views if sum(ch.isalnum() for ch in (c["titulo"] or "")) >= 8]
     clipes_ordenados = (legiveis or por_views)[:1]
     titulo, descricao = youtube.titulo_e_descricao(v, clipes_ordenados)
-    link, privacidade = youtube.publicar(str(arquivo), titulo, descricao,
-                                         tags=[v["streamer"], "twitch", "clipes", "shorts"])
-    con.execute("UPDATE videos SET youtube=? WHERE id=?", (link, v["id"]))
+    colunas = {r[1] for r in con.execute("PRAGMA table_info(videos)")}
+    for col in ("instagram", "facebook"):
+        if col not in colunas:
+            con.execute(f"ALTER TABLE videos ADD COLUMN {col} TEXT")
+    resultado = []
+    try:
+        link, privacidade = youtube.publicar(str(arquivo), titulo, descricao,
+                                             tags=[v["streamer"], "twitch", "clipes", "shorts"])
+        con.execute("UPDATE videos SET youtube=? WHERE id=?", (link, v["id"]))
+        resultado.append(f"YouTube {link} ({privacidade})")
+    except Exception as e:
+        con.execute("UPDATE videos SET youtube=? WHERE id=?", (f"erro: {str(e)[:200]}", v["id"]))
+        resultado.append(f"YouTube ERRO: {e}")
     con.commit()
+    if meta.configurado():
+        legenda = v["legenda"] or titulo
+        for rede, funcao in (("instagram", meta.instagram), ("facebook", meta.facebook)):
+            try:
+                link_rede = funcao(v["url"], legenda)
+                con.execute(f"UPDATE videos SET {rede}=? WHERE id=?", (link_rede, v["id"]))
+                resultado.append(f"{rede.capitalize()} {link_rede}")
+            except Exception as e:
+                resultado.append(f"{rede.capitalize()} ERRO: {e}")
+            con.commit()
     con.close()
     git("add", "clipador.db", cwd=pasta / "estado")
     git("-c", "user.name=Clipador", "-c", "user.email=clipador@users.noreply.github.com",
         "commit", "-q", "-m", f"vídeo {v['id']} no YouTube", cwd=pasta / "estado")
     git("push", "-q", "origin", "estado", cwd=pasta / "estado")
-    print(f"POSTADO: vídeo {v['id']} | {titulo} | {link} | privacidade: {privacidade}")
+    print(f"POSTADO: vídeo {v['id']} | {titulo} | " + " | ".join(resultado))
 
 
 if __name__ == "__main__":

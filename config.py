@@ -50,7 +50,9 @@ for p in (DADOS, BRUTOS, PRONTOS, APROVADOS):
     p.mkdir(parents=True, exist_ok=True)
 
 # Na nuvem (GitHub Actions) o bot roda por um tempo limitado e salva o estado no próprio repositório
-NA_NUVEM = os.getenv("GITHUB_ACTIONS") == "true"
+# CLIPADOR_NUVEM=true faz o mesmo fora do GitHub (ex.: tarefa agendada na nuvem do projeto, rodar_nuvem.sh)
+NO_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+NA_NUVEM = NO_GITHUB_ACTIONS or os.getenv("CLIPADOR_NUVEM", "").lower() == "true"
 MAX_MINUTOS = float(os.getenv("CLIPADOR_MAX_MINUTOS", "0"))  # 0 = sem limite
 
 # Telegram (crie o bot no @BotFather e coloque o token no .env)

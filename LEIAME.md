@@ -108,3 +108,13 @@ Mais tarde, para rodar 24 horas sem o PC, o mesmo código vai para um servidor n
 - A facecam é achada pelo rosto do streamer. Quando não há rosto visível (ou é uma live só de conversa), o clipe sai com o quadro inteiro no meio e fundo desfocado.
 - Ainda sem legenda falada na tela (precisa de transcrição) e sem corte de silêncios.
 - Publicação (Metricool) é o próximo passo: hoje o aprovado vai para a pasta `dados/aprovados/`.
+
+## Sem o GitHub Actions (tarefa agendada na nuvem do projeto)
+
+Enquanto o Actions estiver fora, uma tarefa agendada roda `./rodar_nuvem.sh` de hora em hora. Ele faz o mesmo
+que o workflow (restaura o estado, atende os botões do Telegram, gera os vídeos às 18h e salva), mas não posta em
+rede nenhuma: a postagem tem a tarefa própria das 12h e 18h. Precisa de `TELEGRAM_TOKEN` e `TELEGRAM_CHAT_ID`
+nas variáveis do ambiente. Os vídeos novos ficam cada um num ramo `video-...` (link raw.githubusercontent),
+porque as Releases não aceitam envio de fora do Actions. Se a postagem e o bot salvarem o estado ao mesmo
+tempo, os dois lados são juntados (links de YouTube/Instagram/Facebook não se perdem).
+Quando o Actions voltar, desligue essa tarefa para não ter dois bots.

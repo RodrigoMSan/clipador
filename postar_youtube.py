@@ -6,7 +6,13 @@ depois o portfólio por número), baixa o 1080p das Releases, envia ao YouTube, 
 banco (coluna youtube) e salva o estado de volta no ramo `estado`.
 
 Precisa de YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN no ambiente.
-Uso: python postar_youtube.py [--teste]   (--teste só confere a autorização, não envia nada)
+Antes de enviar, aplica o acabamento "editado" (editar.py): corta pausas, gancho e legenda na tela.
+
+Uso:
+  python postar_youtube.py --proximo                 mostra o próximo vídeo da fila (para escrever o gancho)
+  python postar_youtube.py --gancho "TEXTO" [--video N]   edita e posta (YouTube, Instagram, Facebook)
+  python postar_youtube.py --so-editar N --gancho "TEXTO"  só edita e devolve um link público (TikTok)
+  python postar_youtube.py --teste                   só confere as autorizações
 """
 import json
 import sqlite3
@@ -19,6 +25,7 @@ from pathlib import Path
 import requests
 
 import meta
+import midia
 import youtube
 
 REPO = "https://github.com/RodrigoMSan/clipador"
@@ -51,6 +58,40 @@ def escolher(con):
     return melhor
 
 
+def _arg(nome):
+    if nome in sys.argv:
+        i = sys.argv.index(nome)
+        return sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+    return None
+
+
+def _baixar(url, destino):
+    with requests.get(url, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        with open(destino, "wb") as f:
+            for pedaco in r.iter_content(1 << 20):
+                f.write(pedaco)
+
+
+def _editar(arquivo, gancho):
+    """Devolve o arquivo editado; se a edição falhar, segue com o original."""
+    try:
+        import editar
+        saida = arquivo.with_name(arquivo.stem + "_editado.mp4")
+        info = editar.editar(arquivo, saida, gancho)
+        print(f"Edição: {info}")
+        return saida, True
+    except Exception as e:
+        print(f"Edição falhou, usando o original: {e}")
+        return arquivo, False
+
+
+def _clipes(con, v):
+    ids = json.loads(v["clipes"] or "[]")
+    return [dict(r) for r in con.execute(
+        f"SELECT titulo, data, views FROM clipes WHERE id IN ({','.join('?' * len(ids))})", ids)] if ids else []
+
+
 def main():
     if not youtube.configurado():
         sys.exit("Faltam YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN no ambiente.")
@@ -67,24 +108,44 @@ def main():
     db = pasta / "estado" / "clipador.db"
     con = sqlite3.connect(db)
     con.row_factory = sqlite3.Row
-    escolha = escolher(con)
-    if not escolha:
-        print("FILA_VAZIA: não há vídeo aprovado para postar.")
+    gancho = (_arg("--gancho") or "").strip()
+    so_editar = _arg("--so-editar")
+    forcado = _arg("--video") or so_editar
+    if forcado:
+        linha = con.execute("SELECT * FROM videos WHERE id=?", (int(forcado),)).fetchone()
+        if not linha:
+            sys.exit(f"Vídeo {forcado} não existe.")
+        v = dict(linha)
+        clipes = _clipes(con, v)
+    else:
+        escolha = escolher(con)
+        if not escolha:
+            print("FILA_VAZIA: não há vídeo aprovado para postar.")
+            return
+        _, v, clipes = escolha
+    if "--proximo" in sys.argv:
+        print(f"PROXIMO: vídeo {v['id']}")
+        for c in sorted(clipes, key=lambda c: -(c["views"] or 0)):
+            print(f"  clipe ({c['data']}, {c['views']} views): {c['titulo']}")
+        print(f"  legenda: {v['legenda']!r}")
         return
-    _, v, clipes = escolha
     if not v.get("url"):
         sys.exit(f"O vídeo {v['id']} não tem link público.")
-    arquivo = pasta / f"video_{v['id']}.mp4"
-    with requests.get(v["url"], stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with open(arquivo, "wb") as f:
-            for pedaco in r.iter_content(1 << 20):
-                f.write(pedaco)
+    original = pasta / f"video_{v['id']}.mp4"
+    _baixar(v["url"], original)
+    arquivo, editado = _editar(original, gancho)
+    if so_editar:
+        url = midia.publicar_arquivo(arquivo, f"video_{v['id']}_editado.mp4") if editado else v["url"]
+        print(f"LINK: {url}")
+        return
+    url_publica = midia.publicar_arquivo(arquivo, f"video_{v['id']}_editado.mp4") if editado else v["url"]
     # título: o clipe mais visto cujo título é legível (pelo menos 8 letras/números)
     por_views = sorted(clipes, key=lambda c: -(c["views"] or 0))
     legiveis = [c for c in por_views if sum(ch.isalnum() for ch in (c["titulo"] or "")) >= 8]
     clipes_ordenados = (legiveis or por_views)[:1]
     titulo, descricao = youtube.titulo_e_descricao(v, clipes_ordenados)
+    if gancho:
+        titulo = f"{gancho[:100 - len(' | ' + v['streamer'] + ' #shorts')]} | {v['streamer']} #shorts"
     colunas = {r[1] for r in con.execute("PRAGMA table_info(videos)")}
     for col in ("instagram", "facebook"):
         if col not in colunas:
@@ -100,10 +161,10 @@ def main():
         resultado.append(f"YouTube ERRO: {e}")
     con.commit()
     if meta.configurado():
-        legenda = v["legenda"] or titulo
+        legenda = (f"{gancho}\n\n" if gancho else "") + (v["legenda"] or titulo)
         for rede, funcao in (("instagram", meta.instagram), ("facebook", meta.facebook)):
             try:
-                link_rede = funcao(v["url"], legenda)
+                link_rede = funcao(url_publica, legenda)
                 con.execute(f"UPDATE videos SET {rede}=? WHERE id=?", (link_rede, v["id"]))
                 resultado.append(f"{rede.capitalize()} {link_rede}")
             except Exception as e:

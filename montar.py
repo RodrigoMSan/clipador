@@ -14,7 +14,7 @@ import cv2
 
 import banco
 from progresso import SemProgresso
-from config import (BASE, BRUTOS, CLIPE_MIN, DURACAO_MAX, DURACAO_MIN, FONTE,
+from config import (BASE, BRUTOS, CLIPE_MIN, DURACAO_MAX, DURACAO_MIN, FACECAM_SO_NO_CANTO, FONTE,
                     NOSSO_ARROBA, PRONTOS, TELA_FINAL_SEG)
 
 LARG, ALT = 1080, 1920
@@ -136,6 +136,12 @@ def detectar_rosto(arquivo, amostras=8):
     return (med(0), med(1), med(2), med(3))
 
 
+def rosto_no_canto(rosto, w):
+    """Webcam sobreposta fica na borda; rosto no meio do quadro é gente na cena (live IRL)."""
+    cx = rosto[0] + rosto[2] / 2
+    return cx < w * 0.3 or cx > w * 0.7
+
+
 def recorte_cam(rosto, w, h):
     """Retângulo da facecam em volta do rosto, na proporção da faixa de cima."""
     x, y, fw, fh = rosto
@@ -172,6 +178,8 @@ def montar_clipe(bruto, streamer, saida, prog=None, etapa="Montando"):
     w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
     rosto = detectar_rosto(bruto)
+    if rosto and streamer in FACECAM_SO_NO_CANTO and not rosto_no_canto(rosto, w):
+        rosto = None
     credito = (f"drawtext=fontfile='{FONTE}':text='{_texto('twitch.tv/' + streamer)}':"
                f"fontsize=38:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=12:x=(w-text_w)/2:y={CAM_ALT + 24}")
     if rosto:

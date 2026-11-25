@@ -10,7 +10,8 @@ Antes de enviar, aplica o acabamento "editado" (editar.py): corta pausas, gancho
 
 Uso:
   python postar_youtube.py --proximo                 mostra o próximo vídeo da fila (para escrever o gancho)
-  python postar_youtube.py --gancho "TEXTO" [--video N]   edita e posta (YouTube, Instagram, Facebook)
+  python postar_youtube.py --gancho "TEXTO" [--video N]   edita e posta (YouTube, Instagram, Facebook e,
+                                                      com TIKTOK_POSTAR=1, TikTok)
   python postar_youtube.py --so-editar N --gancho "TEXTO"  só edita e devolve um link público (TikTok)
   python postar_youtube.py --teste                   só confere as autorizações
 """
@@ -26,6 +27,7 @@ import requests
 
 import meta
 import midia
+import tiktok
 import youtube
 
 REPO = "https://github.com/RodrigoMSan/clipador"
@@ -102,6 +104,9 @@ def main():
         if meta.configurado():
             pagina, _, ig = meta.contas()
             print("Meta OK. Página:", pagina, "Instagram:", ig)
+        if tiktok.configurado():
+            info = tiktok.conta()
+            print("TikTok OK. Conta:", info.get("creator_username"), "| postagem", "LIGADA" if tiktok.POSTAR else "desligada")
         return
     pasta = Path(tempfile.mkdtemp())
     git("clone", "-q", "--depth", "1", "-b", "estado", REPO, str(pasta / "estado"), cwd=pasta)
@@ -147,7 +152,7 @@ def main():
     if gancho:
         titulo = f"{gancho[:100 - len(' | ' + v['streamer'] + ' #shorts')]} | {v['streamer']} #shorts"
     colunas = {r[1] for r in con.execute("PRAGMA table_info(videos)")}
-    for col in ("instagram", "facebook"):
+    for col in ("instagram", "facebook", "tiktok"):
         if col not in colunas:
             con.execute(f"ALTER TABLE videos ADD COLUMN {col} TEXT")
     resultado = []
@@ -170,6 +175,15 @@ def main():
             except Exception as e:
                 resultado.append(f"{rede.capitalize()} ERRO: {e}")
             con.commit()
+    if tiktok.POSTAR and tiktok.configurado():
+        legenda_tt = (f"{gancho}\n\n" if gancho else "") + (v["legenda"] or titulo)
+        try:
+            link_tt = tiktok.publicar(str(arquivo), legenda_tt)
+            con.execute("UPDATE videos SET tiktok=? WHERE id=?", (link_tt, v["id"]))
+            resultado.append(f"TikTok {link_tt}")
+        except Exception as e:
+            resultado.append(f"TikTok ERRO: {e}")
+        con.commit()
     con.close()
     git("add", "clipador.db", cwd=pasta / "estado")
     git("-c", "user.name=Clipador", "-c", "user.email=clipador@users.noreply.github.com",

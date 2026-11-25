@@ -9,6 +9,8 @@ import requests
 
 G = "https://graph.facebook.com/v21.0"
 TOKEN = os.getenv("META_TOKEN", "")
+# Página PlayClips (IG @playclips_games). Fixa porque o token enxerga mais de uma página.
+PAGINA_ID = os.getenv("META_PAGE_ID", "1431672520033958")
 
 
 def configurado():
@@ -33,12 +35,15 @@ def contas():
     """Página do Facebook (id, token) e conta do Instagram ligada a ela."""
     try:  # token de página: ele mesmo é a página
         eu = _get("me", fields="id,name,instagram_business_account")
-        if "instagram_business_account" in eu:
+        if "instagram_business_account" in eu and eu["id"] == PAGINA_ID:
             return eu["id"], TOKEN, eu["instagram_business_account"]["id"]
     except RuntimeError:
         pass
     paginas = _get("me/accounts", fields="id,name,access_token,instagram_business_account")["data"]
-    p = next((x for x in paginas if x.get("instagram_business_account")), paginas[0])
+    p = next((x for x in paginas if x["id"] == PAGINA_ID), None)
+    if p is None:  # nunca cai em outra página: melhor falhar do que postar na conta errada
+        raise RuntimeError(f"Meta: o token não dá acesso à página {PAGINA_ID} (PlayClips). Páginas vistas: "
+                           + ", ".join(x.get("name", x["id"]) for x in paginas))
     return p["id"], p["access_token"], (p.get("instagram_business_account") or {}).get("id")
 
 

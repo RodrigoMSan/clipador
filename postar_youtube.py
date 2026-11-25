@@ -92,6 +92,34 @@ def _clipes(con, v):
         f"SELECT titulo, data, views FROM clipes WHERE id IN ({','.join('?' * len(ids))})", ids)] if ids else []
 
 
+def salvar_links(estado, vid):
+    """Envia o banco com os links ao ramo estado. Se o bot salvou algo nesse meio-tempo,
+    pega a versão dele e regrava só os links deste vídeo por cima (nada se perde)."""
+    db = estado / "clipador.db"
+    with sqlite3.connect(db) as con:
+        con.row_factory = sqlite3.Row
+        cols = [c for c in ("youtube", "instagram", "facebook")
+                if c in {r[1] for r in con.execute("PRAGMA table_info(videos)")}]
+        links = dict(con.execute(f"SELECT {', '.join(cols)} FROM videos WHERE id=?", (vid,)).fetchone())
+    autor = ["-c", "user.name=Clipador", "-c", "user.email=clipador@users.noreply.github.com"]
+    for tentativa in range(4):
+        if tentativa:
+            git("fetch", "-q", "origin", "estado", cwd=estado)
+            git("reset", "-q", "--hard", "origin/estado", cwd=estado)
+            with sqlite3.connect(db) as con:
+                existentes = {r[1] for r in con.execute("PRAGMA table_info(videos)")}
+                for col, valor in links.items():
+                    if col not in existentes:
+                        con.execute(f"ALTER TABLE videos ADD COLUMN {col} TEXT")
+                    if valor:
+                        con.execute(f"UPDATE videos SET {col}=? WHERE id=?", (valor, vid))
+        git("add", "clipador.db", cwd=estado)
+        subprocess.run(["git", *autor, "commit", "-q", "-m", f"vídeo {vid} no YouTube"], cwd=estado)
+        if subprocess.run(["git", "push", "-q", "origin", "estado"], cwd=estado).returncode == 0:
+            return
+    raise SystemExit(f"Postei o vídeo {vid}, mas não consegui salvar os links no ramo estado: {links}")
+
+
 def main():
     if not youtube.configurado():
         sys.exit("Faltam YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN no ambiente.")
@@ -171,10 +199,7 @@ def main():
                 resultado.append(f"{rede.capitalize()} ERRO: {e}")
             con.commit()
     con.close()
-    git("add", "clipador.db", cwd=pasta / "estado")
-    git("-c", "user.name=Clipador", "-c", "user.email=clipador@users.noreply.github.com",
-        "commit", "-q", "-m", f"vídeo {v['id']} no YouTube", cwd=pasta / "estado")
-    git("push", "-q", "origin", "estado", cwd=pasta / "estado")
+    salvar_links(pasta / "estado", v["id"])
     print(f"POSTADO: vídeo {v['id']} | {titulo} | " + " | ".join(resultado))
 
 

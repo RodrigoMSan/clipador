@@ -8,7 +8,12 @@ BASE = Path(__file__).resolve().parent
 load_dotenv(BASE / ".env")
 
 # Streamers autorizados (login da Twitch)
-STREAMERS = ["alanzoka"]
+STREAMERS = ["alanzoka", "bisteconee"]
+
+# Streamers que fazem muita live IRL (câmera na rua, bar, carro). Neles a detecção de rosto acha
+# gente na cena; só vale como facecam um rosto fixo perto da borda (webcam sobreposta no canto).
+# Nos outros clipes desses streamers sai o layout de quadro inteiro com fundo desfocado.
+FACECAM_SO_NO_CANTO = {"bisteconee"}
 
 # Períodos de clipes buscados na Twitch ("24hr", "7d", "30d", "all"), separados por vírgula.
 # "all" dá o estoque dos melhores de sempre; "7d" e "24hr" trazem os clipes novos das lives.

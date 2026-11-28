@@ -209,18 +209,17 @@ def _ja_publicados():
 
 
 def proximo_para_postar():
-    """Escolhe o próximo aprovado para o YouTube: primeiro os de clipes dos últimos 3 dias
-    (mais novo primeiro), depois o portfólio em ordem."""
+    """Escolhe o próximo aprovado para o YouTube: mais novos primeiro (clipe mais recente,
+    depois o número maior). Pedido do Rodrigo em 28/11."""
     fora = _ja_publicados()
-    limite = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
     candidatos = []
     for v in banco.videos_por_status("aprovado"):
         if v.get("youtube") or v["id"] in fora:
             continue
         datas = [c["data"] or "" for c in banco.clipes_do_video(v["id"])]
         mais_novo = max(datas) if datas else ""
-        candidatos.append((0 if mais_novo >= limite else 1, "" if mais_novo < limite else _inverso(mais_novo), v["id"]))
-    return min(candidatos)[2] if candidatos else None
+        candidatos.append((_inverso(mais_novo or "00000000"), -v["id"]))
+    return -min(candidatos)[1] if candidatos else None
 
 
 def _inverso(data):

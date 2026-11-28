@@ -1,8 +1,8 @@
 """Posta o próximo vídeo aprovado no YouTube e, com META_TOKEN, nos Reels do Instagram e do Facebook,
 sem o bot ligado (usado quando o Actions está fora).
 
-Lê o estado do ramo `estado`, escolhe o próximo aprovado (clipes dos últimos 3 dias primeiro,
-depois o portfólio por número), baixa o 1080p das Releases, envia ao YouTube, grava o link no
+Lê o estado do ramo `estado`, escolhe o próximo aprovado (mais novos primeiro: clipe mais recente,
+depois o número maior), baixa o 1080p das Releases, envia ao YouTube, grava o link no
 banco (coluna youtube) e salva o estado de volta no ramo `estado`.
 
 Precisa de YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN no ambiente.
@@ -42,7 +42,6 @@ def ja_publicados():
 
 
 def escolher(con):
-    limite = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
     fora = ja_publicados()
     melhor = None
     for v in con.execute("SELECT * FROM videos WHERE status='aprovado' AND (youtube IS NULL OR youtube='') ORDER BY id"):
@@ -52,7 +51,8 @@ def escolher(con):
         clipes = [dict(r) for r in con.execute(
             f"SELECT titulo, data, views FROM clipes WHERE id IN ({','.join('?' * len(ids))})", ids)] if ids else []
         novo = max((c["data"] or "" for c in clipes), default="")
-        chave = (0, -int(novo or 0), v["id"]) if novo >= limite else (1, 0, v["id"])
+        # mais novos primeiro (pedido do Rodrigo em 28/11): data do clipe mais recente, depois o número maior
+        chave = (-int(novo or 0), -v["id"])
         if melhor is None or chave < melhor[0]:
             melhor = (chave, dict(v), clipes)
     return melhor
